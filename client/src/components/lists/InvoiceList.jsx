@@ -1,22 +1,21 @@
 import React from "react";
 import { useEffect, useState, useContext } from "react";
-import "../../styles/inventorylist.css";
+import "../../styles/invoicelist.css";
+import InvoiceRow from "../rows/InvoiceRow";
+import SearchContainers from "../SearchContainers";
 import rightarrow from "../../assets/images/rightarrow.png";
 import leftarrow from "../../assets/images/leftarrow.png";
-import SearchContainers from "../SearchContainers";
-import Row from "../rows/Row";
 import { userContext } from "../../context/restaurantcontext";
 
-function InventoryList() {
+function InvoiceList() {
 	const { setPopup } = useContext(userContext);
-	const [inventory, setInventory] = useState([]);
+	const [invoices, setInvoices] = useState([]);
 	const [filters, setFilters] = useState([]);
 	const [page, setPage] = useState(1);
-	const [displayNum, setDisplayNum] = useState(10);
+	const [displayNum, setDisplayNum] = useState(5);
 	const [currentPage, setCurrentPage] = useState([]);
-
 	useEffect(() => {
-		fetch("api/v1/inventory", {
+		fetch("api/v2/invoice", {
 			method: "GET",
 			headers: {
 				"Content-Type": "application/json",
@@ -24,53 +23,75 @@ function InventoryList() {
 			credentials: "include",
 		})
 			.then((res) => {
-				console.log("STATUS", res.status);
 				if (!res.ok) {
-					setPopup("ERROR Unable to get Inventory");
-					return undefined;
+					return;
 				}
 				return res.json();
 			})
 			.then((data) => {
-				if (!data) return;
-				setInventory(data.data.inventory);
+				setInvoices(data.data.invoices);
 			});
-	}, [setPopup]);
+	}, []);
 
-	const handleDelete = async (id) => {
+	const handleDeleteInvoice = async (invoice) => {
 		const confirm = window.confirm(
-			"Are you sure you want to delete this container?"
+			`Are you sure you want to delete invoice ${invoice.invoice_id}?`
 		);
 		if (!confirm) return;
 
-		try {
-			await fetch(`api/v1/inventory/${id}`, {
+		// Clean up any hanging containers
+		for (const container of invoice.containers) {
+			deleteContainerFromInvoice(container.inventory_id);
+		}
+
+		fetch(`api/v2/invoice/${invoice.invoice_id}`, {
+			method: "DELETE",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			credentials: "include",
+		}).then((res) => {
+			if (!res.ok) {
+				setPopup("Error Deleting This Invoice");
+				return;
+			}
+			setInvoices(
+				invoices.filter((entry) => {
+					return entry.invoice_id !== invoice.invoice_id;
+				})
+			);
+			return;
+		});
+	};
+
+	const deleteContainerFromInvoice = async (container_id) => {
+		fetch(
+			`api/v2/invoice/container/${container_id}`,
+			{
 				method: "DELETE",
 				headers: {
 					"Content-Type": "application/json",
 				},
 				credentials: "include",
-			});
-			setInventory(
-				inventory.filter((container) => {
-					return container.id !== id;
-				})
-			);
-		} catch (error) {
-			setPopup("ERROR There was a problem deleting this container.");
-		}
+			}
+		).then((res) => {
+			if (!res.ok) {
+				setPopup("Unable to remove container from invoice");
+			}
+		});
 	};
 
-	var maxPageNumber = Math.ceil(inventory.length / displayNum);
-	if (inventory.length % displayNum === 0) maxPageNumber += 1;
+	var maxPageNumber = Math.ceil(invoices.length / displayNum);
+	if (invoices.length % displayNum === 0) maxPageNumber += 1;
 
 	useEffect(() => {
 		var start = (page - 1) * displayNum;
 		var end = start + displayNum;
-		var pageHolder = inventory.slice(start, end);
-		console.log(pageHolder);
+		var pageHolder = invoices.slice(start, end);
+		console.log("Slicing from", start, "to", end);
+		console.log(typeof pageHolder, pageHolder);
 		setCurrentPage(pageHolder);
-	}, [page, displayNum, inventory]);
+	}, [page, displayNum, invoices]);
 
 	// FILTERS:
 	const searchContainers = (value) => {
@@ -79,51 +100,31 @@ function InventoryList() {
 			return;
 		}
 		var filterHolder = [];
-		for (let i = 0; i < inventory.length; i++) {
+		for (let i = 0; i < invoices.length; i++) {
 			if (
-				!JSON.stringify(inventory[i])
+				!JSON.stringify(invoices[i])
 					.toLowerCase()
 					.includes(value.toLowerCase())
 			) {
-				filterHolder.push(inventory[i].id);
+				filterHolder.push(invoices[i].invoice_id);
 			}
 		}
 		setFilters(filterHolder);
 		filterHolder = [];
 	};
-
 	const changePageDisplay = (e) => {
 		setDisplayNum(e.target.value);
 	};
-
 	return (
 		<>
 			<div className="inventoryContainer">
 				<SearchContainers search={searchContainers} />
-				<table className="inventoryTable">
+				<table className="invoiceTable superInvoiceTable">
 					<thead>
 						<tr className="inventoryHeader">
-							<th scope="col">Date Added</th>
-							<th scope="col">Unit Number</th>
-							<th scope="col">Size</th>
-							<th scope="col" className="damageCol">
-								Damage
-							</th>
-							<th scope="col" className="tcCol">
-								Trucking Company
-							</th>
-							<th scope="col">Acceptance Number</th>
-							<th scope="col" className="scCol">
-								Sale Company
-							</th>
-							<th scope="col">Aquisition Price</th>
-							<th scope="col">State</th>
-							<th scope="col">Notes</th>
-							<th
-								scope="col"
-								className="placeholderRow pageRow"
-								colSpan={2}
-							>
+							<th>Invoice #</th>
+							<th>Date</th>
+							<th scope="col" className="paginateCol" colSpan={2}>
 								<button
 									className="arrow"
 									onClick={
@@ -156,16 +157,13 @@ function InventoryList() {
 									></img>
 								</button>
 							</th>
-							<th
-								scope="col"
-								className="placeholderRow"
-								colSpan={3}
-							>
+							<th scope="col" className="displayCol" colspan={3}>
 								<label>
 									<span className="pageDisplay">
 										Results Per Page:
 									</span>
 								</label>
+								<br />
 								<select
 									className="pgDisplayDropdown"
 									onChange={changePageDisplay}
@@ -180,23 +178,27 @@ function InventoryList() {
 					</thead>
 					<tbody className="inventoryBody">
 						{filters.length > 0
-							? inventory.map((container) => {
+							? invoices.map((invoice) => {
 									return (
-										!filters.includes(container.id) && (
-											<Row
-												container={container}
-												onDelete={handleDelete}
-												key={container.id}
+										!filters.includes(
+											invoice.invoice_id
+										) && (
+											<InvoiceRow
+												invoice={invoice}
+												deleteInvoice={
+													handleDeleteInvoice
+												}
+												key={invoice.invoice_id}
 											/>
 										)
 									);
 							  })
-							: currentPage.map((container) => {
+							: currentPage.map((invoice) => {
 									return (
-										<Row
-											container={container}
-											onDelete={handleDelete}
-											key={container.id}
+										<InvoiceRow
+											invoice={invoice}
+											deleteInvoice={handleDeleteInvoice}
+											key={invoice.invoice_id}
 										/>
 									);
 							  })}
@@ -207,4 +209,4 @@ function InventoryList() {
 	);
 }
 
-export default InventoryList;
+export default InvoiceList;
